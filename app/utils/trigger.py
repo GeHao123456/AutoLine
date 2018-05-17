@@ -32,7 +32,7 @@ class Trigger:
         self.scheduler = BackgroundScheduler({
             'apscheduler.jobstores.default': {
                 'type': 'sqlalchemy',
-                'url': os.environ.get('TRIGGER_DATABASE_URL')
+                'url': self.app.config["TRIGGER_DATABASE_URL"] #os.environ.get('TRIGGER_DATABASE_URL')
             },
             'apscheduler.executors.processpool': {
                 'type': 'processpool',
@@ -61,7 +61,7 @@ class Trigger:
             for p in projects:
                 if self.scheduler.get_job(p.id) is None:
                     cron = p.cron.replace("\n", "").strip().split(" ")
-                    print(cron)
+                    #print(cron)
                     if len(cron) < 5:
                         continue
                     j = self.scheduler.add_job(func=run_job, trigger='cron', name=p.name, replace_existing=True,
@@ -76,13 +76,15 @@ class Trigger:
                 return False
 
             if self.scheduler.get_job(id) is None:
-                self.scheduler.add_job(func=run_job, trigger='cron', name=p.name, eplace_existing=True,
+                self.scheduler.add_job(func=run_job, trigger='cron', name=p.name,
                                        minute=cron[0], hour=cron[1], day=cron[2], month=cron[3], day_of_week=cron[4],
                                        id="%s" % id, args=(id,))
             else:
-                self.scheduler.modify_job(job_id="%s" % id, name=p.name, eplace_existing=True,
-                                          minute=cron[0], hour=cron[1], day=cron[2], month=cron[3], day_of_week=cron[4],
-                                          args=(id,))
+                self.remove_job(id)
+
+                self.scheduler.add_job(func=run_job, trigger='cron', name=p.name,
+                                       minute=cron[0], hour=cron[1], day=cron[2], month=cron[3], day_of_week=cron[4],
+                                       id="%s" % id, args=(id,))
 
             return True
 
@@ -108,6 +110,9 @@ class Trigger:
         for job in jobs:
             status = "running"
             task = AutoTask.query.filter_by(project_id=job.id).order_by(AutoTask.build_no.desc()).first()
+            if task is None:
+                continue
+
             output_dir = os.getcwd() + "/logs/%s/%s" % (task.project_id, task.build_no)
             if os.path.exists(output_dir + "/report.html"):
                 tree = ET.parse(output_dir + "/output.xml")
@@ -119,14 +124,13 @@ class Trigger:
                 else:
                     status = 'pass'
 
-            data["rows"].append({
-                "id": job.id,
-                "name": job.name,
-                "status": status,
-                "url": url_for('static', filename='images/%s' % urls[status]),
-                "cron": AutoProject.query.filter_by(id=job.id).first().cron,
-                "next_run_time": job.next_run_time.astimezone(to_zone).strftime("%Y-%m-%d %H:%M:%S")
-            })
+            data["rows"].append({"id": "%s" % job.id,
+                                 "name": job.name,
+                                 "status": status,
+                                 "url": url_for('static', filename='images/%s' % urls[status]),
+                                 "cron": AutoProject.query.filter_by(id=job.id).first().cron,
+                                 "next_run_time": job.next_run_time.astimezone(to_zone).strftime("%Y-%m-%d %H:%M:%S")
+                                 })
 
         return data
 

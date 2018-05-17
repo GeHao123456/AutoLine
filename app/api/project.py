@@ -129,8 +129,8 @@ class Project(Resource):
 
                 db.session.add(project)
                 db.session.commit()
-                app = current_app._get_current_object()
-                app.config["TRIGGER"].load_job_list()
+                # app = current_app._get_current_object()
+                # app.config["TRIGGER"].load_job_list()
             except Exception as e:
                 result["status"] = "fail"
                 result["msg"] = "异常：%s" % str(e)
@@ -273,10 +273,10 @@ class Project(Resource):
         children = []
         steps = AutoStep.query.filter_by(case_id=id).order_by(AutoStep.id.asc()).all()
         for step in steps:
-            print(step.keyword)
+            #print(step.keyword)
             children.append({
                 "id": step.id,
-                "text": step.keyword.split(".")[1],
+                "text": step.keyword, #.split(".")[1],
                 "iconCls": "icon-step",
                 "attributes": {
                     "keyword": step.keyword,

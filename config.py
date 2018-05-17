@@ -59,13 +59,15 @@ class Config:
 class DevelopmentConfig(Config):
     DEBUG = True
 
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DEV_DATABASE_URL') #or 'sqlite:///' + os.path.join(basedir, 'AutoLine-dev.sqlite')
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(basedir, 'AutoLine-dev.sqlite') #os.environ.get('DEV_DATABASE_URL')
+    TRIGGER_DATABASE_URL = 'sqlite:///' + os.path.join(basedir, 'AutoLine-dev.sqlite')
 
 
 class ProductionConfig(Config):
     DEBUG = True
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') + "?charset=utf8" or 'sqlite:///' + os.path.join(basedir, 'AutoLine.sqlite')
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') # + "?charset=utf8" or 'sqlite:///' + os.path.join(basedir, 'AutoLine.sqlite')
     #SQLALCHEMY_ECHO = True
+    TRIGGER_DATABASE_URL = os.environ.get('TRIGGER_DATABASE_URL')
 
     @classmethod
     def init_app(cls, app):

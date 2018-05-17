@@ -11,18 +11,20 @@ Email: lymking@foxmail.com
 """
 
 import os
+import sys
 from app import create_app, db
 from app.utils.trigger import Trigger
 from app.models import User, Role
 from flask_script import Manager, Shell
 from flask_migrate import Migrate, MigrateCommand
 
+if sys.version_info < (3, 4):
+    print("请安装Python3.4及以上版本")
+    exit(0)
+
 os.environ["PATH"] = os.environ["PATH"] + ";" + os.getcwd() + "/bin"
 
 app = create_app(os.environ.get('AUTOBEAT_CONFIG') or 'default')
-app.config["TRIGGER"] = Trigger(app)
-app.config["TRIGGER"].setup()
-app.config["TRIGGER"].load_job_list()
 #trigger = Trigger(app)
 #trigger.setup()
 #trigger.load_job_list()
@@ -69,7 +71,10 @@ def keyword():
 
 
 if __name__ == '__main__':
-
-    app.config["TRIGGER"].start()
+    if "runserver" in sys.argv:
+        app.config["TRIGGER"] = Trigger(app)
+        app.config["TRIGGER"].setup()
+        app.config["TRIGGER"].load_job_list()
+        app.config["TRIGGER"].start()
 
     manager.run()
