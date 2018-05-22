@@ -11,15 +11,18 @@ Email: lymking@foxmail.com
 """
 
 import os
+import platform
+import codecs
 import time
 import json
+import subprocess
 from datetime import datetime
 from threading import Thread, Timer
 import xml.etree.ElementTree as ET
 from flask import current_app
 from flask_login import current_user
 from sqlalchemy import and_
-from ..models import AutoTask, AutoProject
+from ..models import AutoTask, AutoProject, User
 from .. import db
 from ..auto.builder import Builder
 from .process import Process
@@ -66,20 +69,49 @@ def check_process_status(app):
             print(e)
 
 
-def run_process(id):
-    from ..utils.runner import Runner
+def debug_run(id):
+    builder = Builder(id)
+    builder.build()
+    runner = Runner(builder.id, builder.build_no)
+
+    runner.debug()
+
+    return (builder.id, builder.build_no)
+
+
+def run_process(category, id):
     builder = Builder(id)
     builder.build()
 
     runner = Runner(builder.id, builder.build_no)
-
-    runner.run()
+    if category == "auto":
+        runner.auto_run()
+    else:
+        runner.run()
 
     app = current_app._get_current_object()
 
     app.config["TRIGGER"].update_job(id)
 
-    # app.config["RUNNERS"].append(runner)
+    app.config["RUNNERS"].append({
+        "project_id": builder.id,
+        "task_id": builder.build_no,
+        "runner": runner
+    })
+    """
+    for r in app.config["RUNNERS"]:
+        print("get running logs: %s %s" % (r["project_id"], r["task_id"]))
+        p = r["runner"]
+        while p._process.poll() is None:
+            line = p._process.stdout.readline()
+            line = line.strip()
+            if line:
+                print('Subprogram output: [{}]'.format(line.decode()))
+        if p._process.returncode == 0:
+            print('Subprogram success')
+        else:
+            print('Subprogram failed')
+    """
 
     return json.dumps({"status": "success", "msg": "任务启动成功"})
 
@@ -90,6 +122,47 @@ class Runner:
         self.build_no = build_no
         self._process = None
         self._timer = None
+        self._out_fd = None
+
+    def auto_run(self):
+        try:
+            user_id = User.query.filter_by(username="AutoExecutor").first().id
+            name = AutoProject.query.filter_by(id=self.project_id).first().name
+            task = AutoTask(project_id=self.project_id,
+                            build_no=self.build_no,
+                            status="running",
+                            create_author_id=user_id,
+                            create_timestamp=datetime.now())
+            db.session.add(task)
+            db.session.commit()
+
+            output_dir = os.getcwd() + "/logs/%s/%s" % (self.project_id, self.build_no)
+            output_dir = output_dir.replace("\\", "/")
+
+            # -x result/output.xml -l result/log.html -r result/report.html
+            shell = False
+            if "Windows" in platform.platform():
+                self._out_fd = codecs.open(output_dir + "/logs.log", "a+", "cp936")
+                command = "pybot -d %s -L DEBUG -N %s %s/testcase.robot" % (output_dir, name, output_dir)
+                shell = True
+            else:
+                self._out_fd = codecs.open(output_dir + "/logs.log", "a+", "utf-8")
+                command = ["pybot", "-d", "%s" % output_dir, "-L", "DEBUG", "-N", "%s" % name, "%s/testcase.robot" % output_dir]
+                #print(command)
+
+            self._process = subprocess.Popen(command, shell=shell, stdout=self._out_fd, stderr=subprocess.STDOUT)
+            #self._process = Process(command)
+
+            #self._process.start()
+
+        except Exception as e:
+            print(str(e))
+            pass
+
+        return {"status": "success",
+                "msg": "任务启动成功",
+                "project_id": self.project_id,
+                "build_no": self.build_no}
 
     def run(self):
         #
@@ -104,12 +177,43 @@ class Runner:
             db.session.commit()
 
             output_dir = os.getcwd() + "/logs/%s/%s" % (self.project_id, self.build_no)
+            output_dir = output_dir.replace("\\", "/")
+
+            shell = False
+            if "Windows" in platform.platform():
+                self._out_fd = codecs.open(output_dir + "/logs.log", "a+", "cp936")
+                command = "pybot -d %s -L DEBUG -N %s %s/testcase.robot" % (output_dir, name, output_dir)
+                shell = True
+            else:
+                self._out_fd = codecs.open(output_dir + "/logs.log", "a+", "utf-8")
+                command = ["pybot", "-d", "%s" % output_dir, "-L", "DEBUG", "-N", "%s" % name,
+                           "%s/testcase.robot" % output_dir]
+                # print(command)
+
+            self._process = subprocess.Popen(command, shell=shell, stdout=self._out_fd, stderr=subprocess.STDOUT)
+
+        except Exception as e:
+            print(str(e))
+            pass
+
+        return {"status": "success",
+                "msg": "任务启动成功",
+                "project_id": self.project_id,
+                "build_no": self.build_no}
+
+    def debug(self):
+        try:
+            output_dir = os.getcwd() + "/logs/%s/%s" % (self.project_id, self.build_no)
+            output_dir = output_dir.replace("\\", "/")
             # -x result/output.xml -l result/log.html -r result/report.html
-            command = ["pybot", "-d", "%s" % output_dir, "-N", "%s" % name,"%s/testcase.robot" % output_dir]
-
-            self._process = Process(command)
-
-            self._process.start()
+            command = ["pybot", "-d", "%s" % output_dir, "--dryrun", "-N", "调试输出", "%s/testcase.robot" % output_dir]
+            self._out_fd = open(output_dir + "/debug.log", "a+")
+            self._process = subprocess.Popen(command, shell=False, stdout=self._out_fd, stderr=subprocess.STDOUT)
+            while True:
+                if self._process.poll() == 0:  # 判断子进程是否结束
+                    break
+                else:
+                    time.sleep(0.2)
 
         except Exception as e:
             print(str(e))
@@ -143,6 +247,7 @@ class Runner:
 
     def write_result(self):
         output_dir = os.getcwd() + "/logs/%s/%s" % (self.project_id, self.build_no)
+        output_dir = output_dir.replace("\\", "/")
         print("write ... result ...")
         print(os.path.exists(output_dir + "/log.html"))
         if os.path.exists(output_dir + "/log.html"):

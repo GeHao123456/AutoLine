@@ -11,6 +11,7 @@ Email: lymking@foxmail.com
 """
 
 import os
+import codecs
 from datetime import datetime
 from flask import current_app
 from flask_login import current_user
@@ -43,6 +44,7 @@ class Builder:
         if project:
             #self.suite = TestSuite(name=project.name, doc=project.desc)
             self.project_dir = self.root + '/logs/%d' % project.id
+            self.project_dir = self.project_dir.replace("\\", "/")
             self.project_name = project.name
 
             if os.path.exists(self.project_dir) is False:
@@ -66,9 +68,11 @@ class Builder:
 
     def build_variables(self):
         obj_dir = self.project_dir + "/%d" % self.build_no
+        obj_dir = obj_dir.replace("\\", "/")
         resource_path = obj_dir + "/resource.txt"
+        resource_path = resource_path.replace("\\", "/")
         #resource_file = codecs.open(resource_path, 'w', 'UTF-8')
-        resource_file = open(resource_path, 'w')
+        resource_file = codecs.open(resource_path, 'w', "utf-8")
         resource_file.write("*** Variables ***\n")
         objects = AutoObject.query.filter_by(project_id=self.id).order_by(AutoObject.id.asc()).all()
         for obj in objects:
@@ -82,31 +86,36 @@ class Builder:
 
     def build_suites(self):
         suite_dir = self.project_dir + "/%d" % self.build_no
+        suite_dir = suite_dir.replace("\\", "/")
         # 截图目录
-        images_dir = suite_dir + "/images"
+        images_dir = os.path.normpath(suite_dir + "/images")
+        images_dir = images_dir.replace("\\", "/")
         if os.path.exists(images_dir) is False:
             os.makedirs(images_dir)
 
         case_path = suite_dir + "/testcase.robot"
-        case_file = open(case_path, 'w')
+        case_file = codecs.open(case_path, 'w', "utf-8")
         #case_file = codecs.open(case_path, 'w', 'UTF-8')
 
         # 写settings
         libs = ('Collections', 'DateTime',
                 'Dialogs', 'OperatingSystem', 'Process',
-                'Screenshot', 'String', 'Telnet', 'XML',
-                'SeleniumLibrary',
-                'AppiumLibrary',
-                'RequestsLibrary')
+                'Screenshot', 'String', 'Telnet', 'XML')
 
         case_file.write("*** Settings ***\n")
         for lib in libs:
             case_file.write("Library\t%s\n" % lib)
 
+        project = AutoProject.query.filter_by(id=self.id).first()
+        auto_lib = {"web": 'SeleniumLibrary',
+                    "app": 'AppiumLibrary',
+                    "http": 'RequestsLibrary'}
+        if project:
+            case_file.write("Library\t%s\n" % auto_lib[project.category])
+
         case_file.write("\nResource\tresource.txt\n")
         case_file.write("\nSuite Setup  Screenshot.Set Screenshot Directory\t%s\n" % images_dir)
         case_file.write("\nSuite Teardown  SeleniumLibrary.Close all browsers\n\n")
-
 
         case_file.write("*** Test Cases ***\n\n")
         suites = AutoSuite.query.filter_by(project_id=self.id).order_by(AutoSuite.id.asc()).all()
